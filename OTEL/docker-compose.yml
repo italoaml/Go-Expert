@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # Serviço A - Input do CEP
+  service-a:
+    build:
+      context: ./service-a
+    restart: unless-stopped  
+    container_name: service-a
+    ports:
+      - "8080:8080"
+    environment:
+      - GRPC_GO_RESETEV=1
+      - OTEL_SERVICE_NAME=service-a
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - SERVICE_B_URL=http://service-b:8081
+    depends_on:
+      - otel-collector
+      - service-b
+    networks:  
+      - otel_network
+    command: ["/bin/sh", "-c", "sleep 5 && ./server"]
+
+  # Serviço B - Orquestração
+  service-b:
+    build:
+      context: ./service-b
+    restart: unless-stopped
+    container_name: service-b
+    ports:
+      - "8081:8081"
+    environment:
+      - GRPC_GO_RESETEV=1
+      - OTEL_SERVICE_NAME=service-b
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - WEATHER_API_KEY=${WEATHER_API_KEY}
+    depends_on:
+      - otel-collector
+    networks: 
+      - otel_network
+    command: ["/bin/sh", "-c", "sleep 5 && ./server"]
+
+  # OTEL Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317" 
+      - "4318:4318" 
+    depends_on:
+      - zipkin
+    networks: 
+      - otel_network
+
+  # Zipkin
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: zipkin
+    ports:
+      - "9411:9411"
+    networks: 
+      - otel_network
+
+networks:
+  otel_network:
+    driver: bridge
